@@ -4,8 +4,8 @@
  *
  *
  * @note
- * Copyright © 2019 Evgeniy Ivanov. Contacts: <strelok1290@gmail.com>
- * Copyright © 1996-2001, 2013, 2016 Thomas Pfau, tfpfau@gmail.com
+ * Copyright ï¿½ 2019 Evgeniy Ivanov. Contacts: <strelok1290@gmail.com>
+ * Copyright ï¿½ 1996-2001, 2013, 2016 Thomas Pfau, tfpfau@gmail.com
  * All rights reserved.
  * @note
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +30,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
 
 #define FTP_CLIENT_DEBUG					0
 
