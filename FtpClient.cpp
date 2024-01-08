@@ -31,7 +31,6 @@
 #include <sys/unistd.h>
 #include "FtpClient.h"
 
-//#include "mbed.h"
 #include "AppConfig.h"
 
 #include "netdb.h"
