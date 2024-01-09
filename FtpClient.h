@@ -118,7 +118,7 @@ typedef struct
 	int (*ftpClientClose)(NetBuf_t* nData);
 } FtpClient;
 
-FtpClient* getFtpClient(void);
+FtpClient* getFtpClient(bool file = false);
 
 #ifdef __cplusplus
 }
