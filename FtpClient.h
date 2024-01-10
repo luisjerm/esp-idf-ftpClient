@@ -120,7 +120,8 @@ typedef struct
 	int (*ftpClientClose)(NetBuf_t* nData);
 } FtpClient;
 
-FtpClient* getFtpClient(bool file = false);
+FtpClient* getFtpClient(uint8_t logLlv, bool file = false);
+void setLoggingLevel(uint8_t level);
 
 #ifdef __cplusplus
 }

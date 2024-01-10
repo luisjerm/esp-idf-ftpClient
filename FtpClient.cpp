@@ -254,7 +254,7 @@ static int readResponse(char c, NetBuf_t* nControl)
 		
 		return 0;
 	}
-	DEBUG_TRACE_E(_EXPR_, _MODULE_, "FTP Client Response: %s", nControl->response);
+	DEBUG_TRACE_D(_EXPR_, _MODULE_, "FTP Client Response: %s", nControl->response);
 	if (nControl->response[3] == '-')
 	{
 		strncpy(match, nControl->response, 3);
@@ -266,7 +266,7 @@ static int readResponse(char c, NetBuf_t* nControl)
 				DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: readResponse, read failed");
 				return 0;
 			}
-			DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Response: %s", nControl->response);
+			DEBUG_TRACE_D(_EXPR_, _MODULE_,"FTP Client Response: %s", nControl->response);
 		}
 		while (strncmp(nControl->response, match, 4));
 	}
@@ -288,7 +288,7 @@ static int sendCommand(const char* cmd, char expresp, NetBuf_t* nControl)
 	char buf[FTP_CLIENT_TEMP_BUFFER_SIZE];
 	if (nControl->dir != FTP_CLIENT_CONTROL)
 		return 0;
-	DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client sendCommand: %s", cmd);
+	DEBUG_TRACE_D(_EXPR_, _MODULE_,"FTP Client sendCommand: %s", cmd);
 	if ((strlen(cmd) + 3) > sizeof(buf))
 		return 0;
 	sprintf(buf, "%s\r\n", cmd);
@@ -812,13 +812,13 @@ static int clearCallbackFtpClient(NetBuf_t* nControl)
  */
 static int connectFtpClient(const char* host, uint16_t port, NetBuf_t** nControl)
 {
-	DEBUG_TRACE_E(_EXPR_, _MODULE_, "host=%s", host);
+	DEBUG_TRACE_D(_EXPR_, _MODULE_, "host=%s", host);
 	struct sockaddr_in sin;
 	memset(&sin,0, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(port);
 	sin.sin_addr.s_addr = inet_addr(host);
-	DEBUG_TRACE_E(_EXPR_, _MODULE_, "sin.sin_addr.s_addr=%"PRIx32, sin.sin_addr.s_addr);
+	DEBUG_TRACE_D(_EXPR_, _MODULE_, "sin.sin_addr.s_addr=%"PRIx32, sin.sin_addr.s_addr);
 	if (sin.sin_addr.s_addr == 0xffffffff) {
 		struct hostent *hp;
 		hp = gethostbyname(host);
@@ -829,11 +829,11 @@ static int connectFtpClient(const char* host, uint16_t port, NetBuf_t** nControl
 		struct ip4_addr *ip4_addr;
 		ip4_addr = (struct ip4_addr *)hp->h_addr;
 		sin.sin_addr.s_addr = ip4_addr->addr;
-		DEBUG_TRACE_E(_EXPR_, _MODULE_, "sin.sin_addr.s_addr=%"PRIx32, sin.sin_addr.s_addr);
+		DEBUG_TRACE_D(_EXPR_, _MODULE_, "sin.sin_addr.s_addr=%"PRIx32, sin.sin_addr.s_addr);
 	}
 
 	int sControl = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-	DEBUG_TRACE_E(_EXPR_, _MODULE_, "sControl=%d", sControl);
+	DEBUG_TRACE_D(_EXPR_, _MODULE_, "sControl=%d", sControl);
 	if (sControl == -1) {
 		DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: Connect, socket");
 		
@@ -1182,7 +1182,6 @@ static int renameFtpClient(const char* src, const char* dst, NetBuf_t* nControl)
 static int accessFtpClient(const char* path, int typ, int mode, NetBuf_t* nControl,
 	NetBuf_t** nData)
 {
-	DEBUG_TRACE_E(_EXPR_, _MODULE_, "path=%s", path);
 	if ((path == NULL) &&
 		((typ == FTP_CLIENT_FILE_WRITE) || (typ == FTP_CLIENT_FILE_READ))) {
 		sprintf(nControl->response,
@@ -1238,15 +1237,12 @@ static int accessFtpClient(const char* path, int typ, int mode, NetBuf_t* nContr
 	}
 
 	if (path != NULL) {
-		DEBUG_TRACE_E(_EXPR_, _MODULE_,"Line: %d", __LINE__);
 		int i = strlen(buf);
 		buf[i++] = ' ';
 		if ((strlen(path) + i + 1) >= sizeof(buf))
 			return 0;
-		DEBUG_TRACE_E(_EXPR_, _MODULE_,"Line: %d", __LINE__);
 		strcpy(&buf[i], path);
 	}
-	DEBUG_TRACE_E(_EXPR_, _MODULE_,"Line: %d", __LINE__);
 	if (openPort(nControl, nData, mode, dir) == -1)
 		return 0;
 	if (!sendCommand(buf, '1', nControl)) {
@@ -1254,7 +1250,6 @@ static int accessFtpClient(const char* path, int typ, int mode, NetBuf_t* nContr
 		*nData = NULL;
 		return 0;
 	}
-	DEBUG_TRACE_E(_EXPR_, _MODULE_,"Line: %d", __LINE__);
 	if (nControl->cmode == FTP_CLIENT_ACTIVE) {
 		if (!acceptConnection(*nData,nControl)) {
 			closeFtpClient(*nData);
@@ -1362,11 +1357,13 @@ static int closeFtpClient(NetBuf_t* nData)
 	return 1;
 }
 
+void setLoggingLevel(uint8_t level){
+	esp_log_level_set(_MODULE_, level);
+}
 
-
-FtpClient* getFtpClient(bool file)
+FtpClient* getFtpClient(uint8_t logLlv, bool file)
 {
-	esp_log_level_set(_MODULE_, ESP_LOG_DEBUG);
+	setLoggingLevel(logLlv);
 	if(!isInitilized) {
 		ftpClient_.ftpClientSite = siteFtpClient;
 		ftpClient_.ftpClientGetLastResponse = getLastResponseFtpClient;

@@ -40,6 +40,7 @@ static const char* PASS = "A1c_Invitado@2019";
 #define DIR_PATH			"software\\esp32\\esp32-prj-uni"
 #define USER			"user"
 #define PASSWD			"password"
+#define LOG_LEVEL       ESP_LOG_DEBUG
 
 uint32_t binsize = 0;
 uint32_t binread = 0;
@@ -127,7 +128,7 @@ TEST_CASE("Conectar red wifi.", "[TEST_FtpCli]"){
 
 //------------------------------------------------------------------------------------
 TEST_CASE("Inicializacion FtpCli.", "[TEST_FtpCli]"){
-	ftpClient = getFtpClient();
+	ftpClient = getFtpClient(LOG_LEVEL);
 	TEST_ASSERT_NOT_NULL(ftpClient);
 }
 
