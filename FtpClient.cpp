@@ -58,6 +58,7 @@ struct NetBuf {
 	int cmode;
 	struct timeval idletime;
 	FtpClientCallback_t idlecb;
+	FtpClientCallback2_t idlecb2;
 	void* idlearg;
 	unsigned long int xfered;
 	unsigned long int cbbytes;
@@ -385,6 +386,7 @@ static int xferNFile(const char* localfile, const char* path,
 	int rv = 1;
 	int l = 0;
 	uint32_t size = 0;
+	char* dbuf = malloc(FTP_CLIENT_BUFFER_SIZE);
 	if (typ == FTP_CLIENT_FILE_WRITE) {
 		/*while ((l = fread(dbuf, 1, FTP_CLIENT_BUFFER_SIZE, local)) > 0) {
 			int c = writeFtpClient(dbuf, l, nData);
@@ -396,18 +398,15 @@ static int xferNFile(const char* localfile, const char* path,
 		}*/
 	}
 	else {
-		while ((l = readFtpClient(&localfile[size], FTP_CLIENT_BUFFER_SIZE, nData)) > 0) {
+		while ((l = readFtpClient(dbuf, FTP_CLIENT_BUFFER_SIZE, nData)) > 0) {
+			if(nControl->idlecb2){ // cb with data if installed
+				nControl->idlecb2(nControl, l, dbuf);
+			}
 			size += l;
-			DEBUG_TRACE_E(_EXPR_, _MODULE_, "Ftp Client xferNFile: size %d", size);
-			/*if (fwrite(dbuf, 1, l, local) == 0) {
-				#if FTP_CLIENT_DEBUG
-				DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client xfer localfile write");
-				#endif
-				rv = 0;
-				break;
-			}*/
+			memset(dbuf, 0x00, FTP_CLIENT_BUFFER_SIZE);
 		}
 	}
+	free(dbuf);
 	closeFtpClient(nData);
 	return rv;
 }
@@ -784,6 +783,7 @@ static int getModDateFtpClient(const char* path, char* dt,
 static int setCallbackFtpClient(const FtpClientCallbackOptions_t* opt, NetBuf_t* nControl)
 {
    nControl->idlecb = opt->cbFunc;
+   nControl->idlecb2 = opt->cbFunc2;
    nControl->idlearg = opt->cbArg;
    nControl->idletime.tv_sec = opt->idleTime / 1000;
    nControl->idletime.tv_usec = (opt->idleTime % 1000) * 1000;

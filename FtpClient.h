@@ -66,10 +66,12 @@ extern "C" {
 typedef struct NetBuf NetBuf_t;
 
 typedef int (*FtpClientCallback_t)(NetBuf_t* nControl, uint32_t xfered, void* arg);
+typedef int (*FtpClientCallback2_t)(NetBuf_t* nControl, uint32_t xfered, char* buf);
 
 typedef struct
 {
 	FtpClientCallback_t cbFunc;			/* function to call */
+	FtpClientCallback2_t cbFunc2;		/* function to call with data */
     void* 				cbArg;			/* argument to pass to function */
     unsigned int 		bytesXferred;	/* callback if this number of bytes transferred */
     unsigned int 		idleTime;		/* callback if this many milliseconds have elapsed */

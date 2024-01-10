@@ -2,6 +2,15 @@
  * test_fetpCli.cpp
  *
  *	Test unitario para la clase FtpClient
+ *  Para personalizar el test, modificar las siguientes constantes:
+ * - SSID	: red wifi a la que conectarse
+ * - PASS	: password de la red wifi
+ * - CONFIG_FTP_SERVER	: IP del servidor FTP
+ * - CONFIG_FTP_PORT	: Puerto del servidor FTP
+ * - FILE_PATH			: Path del archivo a descargar
+ * - DIR_PATH			: Path del directorio a listar
+ * - USER				: USER para hacer login en el servidor FTP
+ * - PASSWD				: PASSWD para hacer login en el servidor FTP
  */
 
 //------------------------------------------------------------------------------------
@@ -25,14 +34,34 @@ static const char* _MODULE_ = "[TEST_FtpCli]....";
 //------------------------------------------------------------------------------------
 static const char* SSID = "WIFI-Invitado-Alc";
 static const char* PASS = "A1c_Invitado@2019";
-#define CONFIG_FTP_SERVER	"192.168.130.115"
+#define CONFIG_FTP_SERVER	"192.168.130.103"
 #define CONFIG_FTP_PORT		2121
 #define FILE_PATH			"software\\esp32\\unit-test-app\\build\\unit-test-app.bin"
 #define DIR_PATH			"software\\esp32\\esp32-prj-uni"
 #define USER			"user"
 #define PASSWD			"password"
+
+uint32_t binsize = 0;
+uint32_t binread = 0;
+
+
 FtpClient* ftpClient = NULL;
-NetBuf_t* ftpClientNetBuf = NULL;
+NetBuf_t *ftpClientNetBuf = NULL;
+
+// Callback function que recibe el numero de datos recibidos
+int ftpClientCb(NetBuf_t* nControl, uint32_t xfered, void* arg){
+	DEBUG_TRACE_I(_EXPR_, _MODULE_, "xfered=%d ", xfered);
+	return 1;
+}
+
+// Callback function que recibe el buffer de datos
+int ftpClientCb2(NetBuf_t* nControl, uint32_t xfered, char* buf){
+	binread += xfered;
+	DEBUG_TRACE_I(_EXPR_,_MODULE_, "Downloaded %d/%d bytes", binread, binsize);
+	return 1;
+}
+
+FtpClientCallbackOptions_t cbOpt;
 
 //------------------------------------------------------------------------------------
 //-- TEST FUNCTIONS ------------------------------------------------------------------
@@ -103,11 +132,22 @@ TEST_CASE("Inicializacion FtpCli.", "[TEST_FtpCli]"){
 }
 
 //------------------------------------------------------------------------------------
+TEST_CASE("Set callback function.", "[TEST_FtpCli]"){
+	cbOpt.cbFunc = NULL;
+	cbOpt.cbArg = NULL;
+	cbOpt.bytesXferred = 0;
+	cbOpt.idleTime = 0;
+	cbOpt.cbFunc2 = ftpClientCb2;
+	int res = ftpClient->ftpClientSetCallback(&cbOpt, ftpClientNetBuf);
+	DEBUG_TRACE_I(_EXPR_, _MODULE_, "res=%d", res);
+	TEST_ASSERT_EQUAL_INT(1, res);
+}
+
+//------------------------------------------------------------------------------------
 TEST_CASE("Connect to server.", "[TEST_FtpCli]"){
 	// Open FTP server
 	DEBUG_TRACE_I(_EXPR_, _MODULE_, "ftp server:%s", CONFIG_FTP_SERVER);
-	//int connect = ftpClient->ftpClientConnect(CONFIG_FTP_SERVER, 21, &ftpClientNetBuf);
-	//int connect = ftpClient->ftpClientConnect(CONFIG_FTP_SERVER, 2121, &ftpClientNetBuf);
+
 	int connect = ftpClient->ftpClientConnect(CONFIG_FTP_SERVER, CONFIG_FTP_PORT, &ftpClientNetBuf);
 	DEBUG_TRACE_I(_EXPR_, _MODULE_, "connect=%d", connect);
 	TEST_ASSERT_EQUAL_INT(1, connect);
@@ -129,7 +169,7 @@ TEST_CASE("Pwd.", "[TEST_FtpCli]"){
 
 //------------------------------------------------------------------------------------
 TEST_CASE("List of file name in the dir.", "[TEST_FtpCli]"){
-	char dirPath[128];
+	char dirPath[512];
 	int res = ftpClient->ftpClientNlst(dirPath, DIR_PATH, ftpClientNetBuf);
 	DEBUG_TRACE_I(_EXPR_, _MODULE_, "dir=%s", dirPath);
 	TEST_ASSERT_EQUAL_INT(1, res);
@@ -152,9 +192,18 @@ TEST_CASE("Change dir.", "[TEST_FtpCli]"){
 TEST_CASE("Get file size.", "[TEST_FtpCli]"){
 	unsigned int size = 0;
 	ftpClient->ftpClientGetFileSize(FILE_PATH, &size, FTP_CLIENT_BINARY, ftpClientNetBuf);
+	binsize = size;
 	DEBUG_TRACE_I(_EXPR_, _MODULE_, "size=%d", size);
 }
 
+//------------------------------------------------------------------------------------
+//Descarga un archivo
+TEST_CASE("Get file.", "[TEST_FtpCli]"){
+	char dirPath[512] = {0};
+	binread = 0;
+	int res = ftpClient->ftpClientGet(dirPath, FILE_PATH, FTP_CLIENT_BINARY, ftpClientNetBuf);
+	TEST_ASSERT_EQUAL_INT(1, res);
+}
 
 
 //------------------------------------------------------------------------------------
