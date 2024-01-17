@@ -35,8 +35,6 @@
 
 #include "netdb.h"
 
-#include "esp_log.h"
-
 static const char* _MODULE_ = "[FtpCli]........";
 #define _EXPR_	(!IS_ISR())
 
@@ -60,6 +58,7 @@ struct NetBuf {
 	int cmode;
 	struct timeval idletime;
 	FtpClientCallback_t idlecb;
+	Callback <int(NetBuf_t*, uint32_t, char*)> idlecb2;
 	void* idlearg;
 	unsigned long int xfered;
 	unsigned long int cbbytes;
@@ -68,6 +67,7 @@ struct NetBuf {
 };
 
 static bool isInitilized = false;
+static bool _file = false;
 static FtpClient ftpClient_;
 
 /*Internal use functions*/
@@ -75,6 +75,10 @@ static int socketWait(NetBuf_t* ctl);
 static int readResponse(char c, NetBuf_t* nControl);
 static int readLine(char* buffer, int max, NetBuf_t* ctl);
 static int sendCommand(const char* cmd, char expresp, NetBuf_t* nControl);
+static int xferFile(const char* localfile, const char* path,
+	NetBuf_t* nControl, int typ, int mode);
+static int xferNFile(const char* localfile, const char* path,
+	NetBuf_t* nControl, int typ, int mode);
 static int xfer(const char* localfile, const char* path,
 	NetBuf_t* nControl, int typ, int mode);
 static int openPort(NetBuf_t* nControl, NetBuf_t** nData, int mode, int dir);
@@ -220,9 +224,7 @@ static int readLine(char* buffer, int max, NetBuf_t* ctl)
 		if (!socketWait(ctl))
 			return retval;
 		if ((x = recv(ctl->handle, ctl->cput,ctl->cleft, 0)) == -1) {
-			#if FTP_CLIENT_DEBUG
 			DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: realLine, read");
-			#endif
 			retval = -1;
 			break;
 		}
@@ -248,14 +250,11 @@ static int readResponse(char c, NetBuf_t* nControl)
 	char match[5];
 	if (readLine(nControl->response,
 			FTP_CLIENT_RESPONSE_BUFFER_SIZE, nControl) == -1) {
-		#if FTP_CLIENT_DEBUG
 		DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: readResponse, read failed");
-		#endif
+		
 		return 0;
 	}
-	#if FTP_CLIENT_DEBUG == 2
 	DEBUG_TRACE_D(_EXPR_, _MODULE_, "FTP Client Response: %s", nControl->response);
-	#endif
 	if (nControl->response[3] == '-')
 	{
 		strncpy(match, nControl->response, 3);
@@ -264,14 +263,10 @@ static int readResponse(char c, NetBuf_t* nControl)
 		do {
 			if (readLine(nControl->response,
 					FTP_CLIENT_RESPONSE_BUFFER_SIZE, nControl) == -1) {
-				#if FTP_CLIENT_DEBUG
 				DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: readResponse, read failed");
-				#endif
 				return 0;
 			}
-			#if FTP_CLIENT_DEBUG == 2
 			DEBUG_TRACE_D(_EXPR_, _MODULE_,"FTP Client Response: %s", nControl->response);
-			#endif
 		}
 		while (strncmp(nControl->response, match, 4));
 	}
@@ -293,34 +288,28 @@ static int sendCommand(const char* cmd, char expresp, NetBuf_t* nControl)
 	char buf[FTP_CLIENT_TEMP_BUFFER_SIZE];
 	if (nControl->dir != FTP_CLIENT_CONTROL)
 		return 0;
-	#if FTP_CLIENT_DEBUG == 2
 	DEBUG_TRACE_D(_EXPR_, _MODULE_,"FTP Client sendCommand: %s", cmd);
-	#endif
 	if ((strlen(cmd) + 3) > sizeof(buf))
 		return 0;
 	sprintf(buf, "%s\r\n", cmd);
 	if (send(nControl->handle, buf, strlen(buf), 0) <= 0) {
-		#if FTP_CLIENT_DEBUG
 		DEBUG_TRACE_E(_EXPR_, _MODULE_, "FTP Client sendCommand: write");
-		#endif
 		return 0;
 	}
 	return readResponse(expresp, nControl);
 }
-
-
 
 /*
  * Xfer - issue a command and transfer data
  *
  * return 1 if successful, 0 otherwise
  */
-static int xfer(const char* localfile, const char* path,
+static int xferFile(const char* localfile, const char* path,
 	NetBuf_t* nControl, int typ, int mode)
 {
 	FILE* local = NULL;
 	NetBuf_t* nData;
-
+	
 	if (localfile != NULL) {
 		char ac[4];
 		memset( ac, 0, sizeof(ac) );
@@ -355,7 +344,7 @@ static int xfer(const char* localfile, const char* path,
 		while ((l = fread(dbuf, 1, FTP_CLIENT_BUFFER_SIZE, local)) > 0) {
 			int c = writeFtpClient(dbuf, l, nData);
 			if (c < l) {
-				DEBUG_TRACE_D(_EXPR_, _MODULE_,"Ftp Client xfer short write: passed %d, wrote %d", l, c);
+				DEBUG_TRACE_E(_EXPR_, _MODULE_,"Ftp Client xfer short write: passed %d, wrote %d", l, c);
 				rv = 0;
 				break;
 			}
@@ -364,9 +353,7 @@ static int xfer(const char* localfile, const char* path,
 	else {
 		while ((l = readFtpClient(dbuf, FTP_CLIENT_BUFFER_SIZE, nData)) > 0) {
 			if (fwrite(dbuf, 1, l, local) == 0) {
-				#if FTP_CLIENT_DEBUG
 				DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client xfer localfile write");
-				#endif
 				rv = 0;
 				break;
 			}
@@ -381,6 +368,66 @@ static int xfer(const char* localfile, const char* path,
 	}
 	closeFtpClient(nData);
 	return rv;
+}
+/*
+ * Xfer - issue a command and transfer data
+ *
+ * return 1 if successful, 0 otherwise
+ */
+static int xferNFile(const char* localfile, const char* path,
+	NetBuf_t* nControl, int typ, int mode)
+{
+	NetBuf_t* nData;
+
+	if (!accessFtpClient(path, typ, mode, nControl, &nData)) {
+		DEBUG_TRACE_E(_EXPR_, _MODULE_, "FTP Client Error: xferNFile, accessFtpClient");
+		return 0;
+	}
+
+	int rv = 1;
+	int l = 0;
+	uint32_t size = 0;
+	char* dbuf = malloc(FTP_CLIENT_BUFFER_SIZE);
+	if (typ == FTP_CLIENT_FILE_WRITE) {
+		/*while ((l = fread(dbuf, 1, FTP_CLIENT_BUFFER_SIZE, local)) > 0) {
+			int c = writeFtpClient(dbuf, l, nData);
+			if (c < l) {
+				DEBUG_TRACE_E(_EXPR_, _MODULE_,"Ftp Client xfer short write: passed %d, wrote %d", l, c);
+				rv = 0;
+				break;
+			}
+		}*/
+	}
+	else {
+		while ((l = readFtpClient(dbuf, FTP_CLIENT_BUFFER_SIZE, nData)) > 0) {
+			if(nControl->idlecb2){ // cb with data if installed
+				if(nControl->idlecb2.call(nControl, l, dbuf)!=1){
+					DEBUG_TRACE_E(_EXPR_, _MODULE_,"Ftp Client xferNFile: idlecb2");
+					rv = 0;
+					break;
+				}
+			}
+			size += l;
+			memset(dbuf, 0x00, FTP_CLIENT_BUFFER_SIZE);
+		}
+	}
+	free(dbuf);
+	closeFtpClient(nData);
+	return rv;
+}
+
+/*
+ * Xfer - issue a command and transfer data
+ *
+ * return 1 if successful, 0 otherwise
+ */
+static int xfer(const char* localfile, const char* path,
+	NetBuf_t* nControl, int typ, int mode)
+{
+	if(_file)
+		return xferFile(localfile, path, nControl, typ, mode);
+	else
+		return xferNFile(localfile, path, nControl, typ, mode);
 }
 
 
@@ -430,24 +477,18 @@ static int openPort(NetBuf_t* nControl, NetBuf_t** nData, int mode, int dir)
 	}
 	else {
 		if(getsockname(nControl->handle, &sin.sa, &l) < 0) {
-			#if FTP_CLIENT_DEBUG
 			DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client openPort: getsockname");
-			#endif
 			return -1;
 		}
 	}
 	int sData = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sData == -1) {
-		#if FTP_CLIENT_DEBUG
 		DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client openPort: socket");
-		#endif
 		return -1;
 	}
 	if (nControl->cmode == FTP_CLIENT_PASSIVE) {
 		if (connect(sData, &sin.sa, sizeof(sin.sa)) == -1) {
-			#if FTP_CLIENT_DEBUG
 			DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client openPort: connect");
-			#endif
 			closesocket(sData);
 			return -1;
 		}
@@ -455,16 +496,12 @@ static int openPort(NetBuf_t* nControl, NetBuf_t** nData, int mode, int dir)
 	else {
 		sin.in.sin_port = 0;
 		if (bind(sData, &sin.sa, sizeof(sin)) == -1) {
-			#if FTP_CLIENT_DEBUG
 			DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client openPort: bind");
-			#endif
 			closesocket(sData);
 			return -1;
 		}
 		if (listen(sData, 1) < 0) {
-			#if FTP_CLIENT_DEBUG
 			DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client openPort: listen");
-			#endif
 			closesocket(sData);
 			return -1;
 		}
@@ -485,16 +522,12 @@ static int openPort(NetBuf_t* nControl, NetBuf_t** nData, int mode, int dir)
 	}
 	NetBuf_t* ctrl = calloc(1, sizeof(NetBuf_t));
 	if (ctrl == NULL) {
-		#if FTP_CLIENT_DEBUG
 		DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client openPort: calloc ctrl");
-		#endif
 		closesocket(sData);
 		return -1;
 	}
 	if ((mode == 'A') && ((ctrl->buf = malloc(FTP_CLIENT_BUFFER_SIZE)) == NULL)) {
-		#if FTP_CLIENT_DEBUG
 		DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client openPort: calloc ctrl->buf");
-		#endif
 		closesocket(sData);
 		free(ctrl);
 		return -1;
@@ -541,10 +574,8 @@ static int writeLine(const char* buf, int len, NetBuf_t* nData)
 					return x;
 				w = send(nData->handle, nbp, FTP_CLIENT_BUFFER_SIZE, 0);
 				if (w != FTP_CLIENT_BUFFER_SIZE) {
-					#if FTP_CLIENT_DEBUG
-					DEBUG_TRACE_D(_EXPR_, _MODULE_,"Ftp client write line: net_write(1) returned %d, errno = %d",
+					DEBUG_TRACE_E(_EXPR_, _MODULE_,"Ftp client write line: net_write(1) returned %d, errno = %d",
 							w, errno);
-					#endif
 					return(-1);
 				}
 				nb = 0;
@@ -556,10 +587,9 @@ static int writeLine(const char* buf, int len, NetBuf_t* nData)
 				return x;
 			w = send(nData->handle, nbp, FTP_CLIENT_BUFFER_SIZE, 0);
 			if (w != FTP_CLIENT_BUFFER_SIZE) {
-				#if FTP_CLIENT_DEBUG
-				DEBUG_TRACE_D(_EXPR_, _MODULE_,"Ftp client write line: net_write(2) returned %d, errno = %d",
+				DEBUG_TRACE_E(_EXPR_, _MODULE_,"Ftp client write line: net_write(2) returned %d, errno = %d",
 						w, errno);
-				#endif
+			
 				return(-1);
 			}
 			nb = 0;
@@ -571,10 +601,9 @@ static int writeLine(const char* buf, int len, NetBuf_t* nData)
 			return x;
 		w = send(nData->handle, nbp, nb, 0);
 		if (w != nb) {
-			#if FTP_CLIENT_DEBUG
-			DEBUG_TRACE_D(_EXPR_, _MODULE_, "Ftp client write line: net_write(3) returned %d, errno = %d",
+			DEBUG_TRACE_E(_EXPR_, _MODULE_, "Ftp client write line: net_write(3) returned %d, errno = %d",
 					w, errno);
-			#endif
+			
 			return(-1);
 		}
 	}
@@ -759,6 +788,7 @@ static int getModDateFtpClient(const char* path, char* dt,
 static int setCallbackFtpClient(const FtpClientCallbackOptions_t* opt, NetBuf_t* nControl)
 {
    nControl->idlecb = opt->cbFunc;
+   nControl->idlecb2 = opt->cbFunc2;
    nControl->idlearg = opt->cbArg;
    nControl->idletime.tv_sec = opt->idleTime / 1000;
    nControl->idletime.tv_usec = (opt->idleTime % 1000) * 1000;
@@ -787,56 +817,47 @@ static int clearCallbackFtpClient(NetBuf_t* nControl)
  */
 static int connectFtpClient(const char* host, uint16_t port, NetBuf_t** nControl)
 {
-	ESP_LOGD(__FUNCTION__, "host=%s", host);
+	DEBUG_TRACE_D(_EXPR_, _MODULE_, "host=%s", host);
 	struct sockaddr_in sin;
 	memset(&sin,0, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(port);
 	sin.sin_addr.s_addr = inet_addr(host);
-	ESP_LOGD(__FUNCTION__, "sin.sin_addr.s_addr=%"PRIx32, sin.sin_addr.s_addr);
+	DEBUG_TRACE_D(_EXPR_, _MODULE_, "sin.sin_addr.s_addr=%"PRIx32, sin.sin_addr.s_addr);
 	if (sin.sin_addr.s_addr == 0xffffffff) {
 		struct hostent *hp;
 		hp = gethostbyname(host);
 		if (hp == NULL) {
-			#if FTP_CLIENT_DEBUG
 			DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: Connect, gethostbyname");
-			#endif
 			return 0;
 		}
 		struct ip4_addr *ip4_addr;
 		ip4_addr = (struct ip4_addr *)hp->h_addr;
 		sin.sin_addr.s_addr = ip4_addr->addr;
-		ESP_LOGD(__FUNCTION__, "sin.sin_addr.s_addr=%"PRIx32, sin.sin_addr.s_addr);
+		DEBUG_TRACE_D(_EXPR_, _MODULE_, "sin.sin_addr.s_addr=%"PRIx32, sin.sin_addr.s_addr);
 	}
 
 	int sControl = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-	ESP_LOGD(__FUNCTION__, "sControl=%d", sControl);
+	DEBUG_TRACE_D(_EXPR_, _MODULE_, "sControl=%d", sControl);
 	if (sControl == -1) {
-		#if FTP_CLIENT_DEBUG
 		DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: Connect, socket");
-		#endif
+		
 		return 0;
 	}
 	if(connect(sControl, (struct sockaddr *)&sin, sizeof(sin)) == -1) {
-		#if FTP_CLIENT_DEBUG
 		DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: Connect, connect");
-		#endif
 		closesocket(sControl);
 		return 0;
 	}
 	NetBuf_t* ctrl = calloc(1, sizeof(NetBuf_t));
 	if (ctrl == NULL) {
-		#if FTP_CLIENT_DEBUG
 		DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: Connect, calloc ctrl");
-		#endif
 		closesocket(sControl);
 		return 0;
 	}
 	ctrl->buf = malloc(FTP_CLIENT_BUFFER_SIZE);
 	if (ctrl->buf == NULL) {
-		#if FTP_CLIENT_DEBUG
 		DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: Connect, calloc ctrl->buf");
-		#endif
 		closesocket(sControl);
 		free(ctrl);
 		return 0;
@@ -853,6 +874,7 @@ static int connectFtpClient(const char* host, uint16_t port, NetBuf_t** nControl
 	ctrl->xfered1 = 0;
 	ctrl->cbbytes = 0;
 	if (readResponse('2', ctrl) == 0) {
+		DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: Connect, readResponse");
 		closesocket(sControl);
 		free(ctrl->buf);
 		free(ctrl);
@@ -1227,7 +1249,6 @@ static int accessFtpClient(const char* path, int typ, int mode, NetBuf_t* nContr
 			return 0;
 		strcpy(&buf[i], path);
 	}
-
 	if (openPort(nControl, nData, mode, dir) == -1)
 		return 0;
 	if (!sendCommand(buf, '1', nControl)) {
@@ -1253,20 +1274,26 @@ static int accessFtpClient(const char* path, int typ, int mode, NetBuf_t* nContr
  */
 static int readFtpClient(void* buf, int max, NetBuf_t* nData)
 {
-	if (nData->dir != FTP_CLIENT_READ)
+	if (nData->dir != FTP_CLIENT_READ){
+		DEBUG_TRACE_E(_EXPR_, _MODULE_, "FTP Client Error: nData->dir != FTP_CLIENT_READ");
 		return 0;
+	}
 	int i = 0;
 	if (nData->buf){
 		i = readLine(buf, max, nData);
 	}
 	else {
 		i = socketWait(nData);
-		if (i != 1)
+		if (i != 1){
+			DEBUG_TRACE_E(_EXPR_, _MODULE_, "FTP Client Error: socketWait");
 			return 0;
+		}
 		i = recv(nData->handle, buf, max, 0);
 	}
-	if (i == -1)
+	if (i == -1){
+		DEBUG_TRACE_E(_EXPR_, _MODULE_, "FTP Client Error: recv");
 		return 0;
+	}
 	nData->xfered += i;
 	if (nData->idlecb && nData->cbbytes) {
 		nData->xfered1 += i;
@@ -1342,11 +1369,13 @@ static int closeFtpClient(NetBuf_t* nData)
 	return 1;
 }
 
+void setLoggingLevel(uint8_t level){
+	esp_log_level_set(_MODULE_, level);
+}
 
-
-FtpClient* getFtpClient(void)
+FtpClient* getFtpClient(uint8_t logLlv, bool file)
 {
-	esp_log_level_set(_MODULE_, APP_FTTPCLIENT_LOG_LEVEL);
+	setLoggingLevel(logLlv);
 	if(!isInitilized) {
 		ftpClient_.ftpClientSite = siteFtpClient;
 		ftpClient_.ftpClientGetLastResponse = getLastResponseFtpClient;
@@ -1376,6 +1405,7 @@ FtpClient* getFtpClient(void)
 		ftpClient_.ftpClientWrite = writeFtpClient;
 		ftpClient_.ftpClientClose = closeFtpClient;
 		isInitilized = true;
+		_file = file;
 	}
 	return &ftpClient_;
 }

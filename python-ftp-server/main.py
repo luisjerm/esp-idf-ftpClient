@@ -26,6 +26,7 @@ args = parser.parse_args()
 logging.info("user={} {}".format(type(args.user), args.user))
 logging.info("password={} {}".format(type(args.password), args.password))
 logging.info("port={} {}".format(type(args.port), args.port))
+logging.info("cwd={}".format(os.getcwd()))
 
 
 authorizer = pyftpdlib.authorizers.DummyAuthorizer()
@@ -37,6 +38,6 @@ handler.authorizer = authorizer
 # Disable remote connection
 #server = pyftpdlib.servers.FTPServer(("127.0.0.1", 2121), handler)
 # Enable remote connection
-server = pyftpdlib.servers.FTPServer(("0.0.0.0", 2121), handler)
+server = pyftpdlib.servers.FTPServer(("192.168.130.101", 2121), handler)
 server.serve_forever()
 
