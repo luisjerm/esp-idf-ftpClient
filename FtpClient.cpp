@@ -58,7 +58,7 @@ struct NetBuf {
 	int cmode;
 	struct timeval idletime;
 	FtpClientCallback_t idlecb;
-	FtpClientCallback2_t idlecb2;
+	Callback <int(NetBuf_t*, uint32_t, char*)> idlecb2;
 	void* idlearg;
 	unsigned long int xfered;
 	unsigned long int cbbytes;
@@ -380,6 +380,7 @@ static int xferNFile(const char* localfile, const char* path,
 	NetBuf_t* nData;
 
 	if (!accessFtpClient(path, typ, mode, nControl, &nData)) {
+		DEBUG_TRACE_E(_EXPR_, _MODULE_, "FTP Client Error: xferNFile, accessFtpClient");
 		return 0;
 	}
 
@@ -400,7 +401,11 @@ static int xferNFile(const char* localfile, const char* path,
 	else {
 		while ((l = readFtpClient(dbuf, FTP_CLIENT_BUFFER_SIZE, nData)) > 0) {
 			if(nControl->idlecb2){ // cb with data if installed
-				nControl->idlecb2(nControl, l, dbuf);
+				if(nControl->idlecb2.call(nControl, l, dbuf)!=1){
+					DEBUG_TRACE_E(_EXPR_, _MODULE_,"Ftp Client xferNFile: idlecb2");
+					rv = 0;
+					break;
+				}
 			}
 			size += l;
 			memset(dbuf, 0x00, FTP_CLIENT_BUFFER_SIZE);
@@ -869,6 +874,7 @@ static int connectFtpClient(const char* host, uint16_t port, NetBuf_t** nControl
 	ctrl->xfered1 = 0;
 	ctrl->cbbytes = 0;
 	if (readResponse('2', ctrl) == 0) {
+		DEBUG_TRACE_E(_EXPR_, _MODULE_,"FTP Client Error: Connect, readResponse");
 		closesocket(sControl);
 		free(ctrl->buf);
 		free(ctrl);
@@ -1268,20 +1274,26 @@ static int accessFtpClient(const char* path, int typ, int mode, NetBuf_t* nContr
  */
 static int readFtpClient(void* buf, int max, NetBuf_t* nData)
 {
-	if (nData->dir != FTP_CLIENT_READ)
+	if (nData->dir != FTP_CLIENT_READ){
+		DEBUG_TRACE_E(_EXPR_, _MODULE_, "FTP Client Error: nData->dir != FTP_CLIENT_READ");
 		return 0;
+	}
 	int i = 0;
 	if (nData->buf){
 		i = readLine(buf, max, nData);
 	}
 	else {
 		i = socketWait(nData);
-		if (i != 1)
+		if (i != 1){
+			DEBUG_TRACE_E(_EXPR_, _MODULE_, "FTP Client Error: socketWait");
 			return 0;
+		}
 		i = recv(nData->handle, buf, max, 0);
 	}
-	if (i == -1)
+	if (i == -1){
+		DEBUG_TRACE_E(_EXPR_, _MODULE_, "FTP Client Error: recv");
 		return 0;
+	}
 	nData->xfered += i;
 	if (nData->idlecb && nData->cbbytes) {
 		nData->xfered1 += i;

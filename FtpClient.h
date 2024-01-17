@@ -27,6 +27,8 @@
 #ifndef FTPCLIENT_H_
 #define FTPCLIENT_H_
 
+#include "mbed.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -71,7 +73,7 @@ typedef int (*FtpClientCallback2_t)(NetBuf_t* nControl, uint32_t xfered, char* b
 typedef struct
 {
 	FtpClientCallback_t cbFunc;			/* function to call */
-	FtpClientCallback2_t cbFunc2;		/* function to call with data */
+	Callback <int(NetBuf_t*, uint32_t, char*)> cbFunc2;		/* function to call with data */
     void* 				cbArg;			/* argument to pass to function */
     unsigned int 		bytesXferred;	/* callback if this number of bytes transferred */
     unsigned int 		idleTime;		/* callback if this many milliseconds have elapsed */

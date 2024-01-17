@@ -38,6 +38,6 @@ handler.authorizer = authorizer
 # Disable remote connection
 #server = pyftpdlib.servers.FTPServer(("127.0.0.1", 2121), handler)
 # Enable remote connection
-server = pyftpdlib.servers.FTPServer(("192.168.130.115", 2121), handler)
+server = pyftpdlib.servers.FTPServer(("192.168.130.101", 2121), handler)
 server.serve_forever()
 
